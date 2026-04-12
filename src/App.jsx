@@ -10,6 +10,7 @@ import {
   addDoc,
   deleteDoc,
   updateDoc,
+  setDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import {
@@ -39,6 +40,10 @@ import {
   BookText,
   Download,
   FileText,
+  Zap,
+  Flame,
+  Coffee,
+  Activity,
 } from "lucide-react";
 
 import { ADMIN_ID, WORKER_ID, ADMIN_NAME, WORKER_NAME, TASK_RATE, APP_ID as appId } from "./constants";
@@ -78,6 +83,28 @@ export default function App() {
   const [visibleActivityCount, setVisibleActivityCount] = useState(5);
   const [visibleDaysCount, setVisibleDaysCount] = useState(3);
   const [deleteModalId, setDeleteModalId] = useState(null);
+  const [workingStatus, setWorkingStatus] = useState("Idle");
+
+  const statusConfig = [
+    {
+      name: "Sherry",
+      icon: Zap,
+      activeClass:
+        "bg-white dark:bg-slate-900 text-violet-600 dark:text-violet-400 shadow-[0_0_20px_rgba(139,92,246,0.6)] border-violet-400 dark:border-violet-500 scale-105 z-10",
+    },
+    {
+      name: "Akuma",
+      icon: Flame,
+      activeClass:
+        "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.6)] border-blue-400 dark:border-blue-500 scale-105 z-10",
+    },
+    {
+      name: "Idle",
+      icon: Coffee,
+      activeClass:
+        "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.5)] border-emerald-400 dark:border-emerald-500 scale-105 z-10",
+    },
+  ];
 
   // Hardcode the storage ID so both admin and worker access the exact same database collection
   const storageId = "shared_ledger"; 
@@ -176,9 +203,26 @@ export default function App() {
       setActivities(data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
     });
 
+    // Listener for Working Status
+    const statusDocRef = doc(
+      db,
+      "artifacts",
+      appId,
+      "public",
+      "data",
+      `status_${storageId}`,
+      "current"
+    );
+    const unsubStatus = onSnapshot(statusDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setWorkingStatus(docSnap.data().workingStatus || "Idle");
+      }
+    });
+
     return () => {
       unsubLedger();
       unsubActivity();
+      unsubStatus();
     };
   }, [authReady, user, isAuthorized, storageId]);
 
@@ -193,6 +237,26 @@ export default function App() {
       pendingEarnings: pendingTasks * TASK_RATE,
     };
   }, [entries]);
+
+  const handleStatusChange = async (newStatus) => {
+    if (workingStatus === newStatus) return;
+    setWorkingStatus(newStatus);
+    try {
+      const statusDocRef = doc(
+        db,
+        "artifacts",
+        appId,
+        "public",
+        "data",
+        `status_${storageId}`,
+        "current"
+      );
+      await setDoc(statusDocRef, { workingStatus: newStatus, updatedAt: serverTimestamp() }, { merge: true });
+      await logActivity("STATUS", `changed working status to ${newStatus}`);
+    } catch (err) {
+      console.error("Failed to update status", err);
+    }
+  };
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -423,9 +487,9 @@ export default function App() {
   if (!isAuthorized) {
     return (
       <div className="min-h-screen bg-slate-900 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors">
-        <div className="bg-slate-800 dark:bg-slate-900 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-slate-700 dark:border-slate-800">
+        <div className="bg-slate-800/80 dark:bg-slate-900/80 backdrop-blur-xl p-8 rounded-2xl shadow-[0_0_40px_rgba(16,185,129,0.15)] w-full max-w-md border border-emerald-500/30 dark:border-emerald-500/30">
           <div className="flex flex-col items-center mb-8 text-center">
-            <div className="bg-emerald-500 p-4 rounded-xl mb-4">
+            <div className="bg-emerald-500/20 border border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.4)] p-4 rounded-xl mb-4">
               <BookText className="text-white w-8 h-8" />
             </div>
             <h1 className="text-2xl font-bold text-white">Task Ledger</h1>
@@ -441,7 +505,7 @@ export default function App() {
                 required
                 value={sharedId}
                 onChange={(e) => setSharedId(e.target.value)}
-                className="w-full bg-slate-700 dark:bg-slate-800 border border-slate-600 dark:border-slate-700 rounded-lg pl-10 pr-4 py-3 text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-colors"
+                className="w-full bg-slate-700/50 dark:bg-slate-800/50 backdrop-blur-sm border border-emerald-500/30 rounded-lg pl-10 pr-4 py-3 text-white focus:border-emerald-500 focus:shadow-[0_0_20px_rgba(16,185,129,0.3)] outline-none transition-all"
                 placeholder="Unique ID"
               />
             </div>
@@ -450,7 +514,7 @@ export default function App() {
             )}
             <button
               type="submit"
-              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-all"
+              className="w-full bg-emerald-500/90 hover:bg-emerald-500 border border-emerald-400/50 shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:shadow-[0_0_30px_rgba(16,185,129,0.6)] text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-all"
             >
               Sync Data <ChevronRight className="w-4 h-4" />
             </button>
@@ -465,12 +529,12 @@ export default function App() {
 
 
 
-      <nav className=" rounded-b-2xl bg-white dark:bg-slate-900 border-b dark:border-slate-800 sticky top-0 z-20 px-4 h-16 flex items-center justify-between shadow-sm md:px-8  md:w-[80%] md:mx-auto">
+      <nav className=" rounded-b-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border border-t-0 border-emerald-500/20 dark:border-emerald-500/20 shadow-[0_4px_25px_rgba(16,185,129,0.1)] sticky top-0 z-20 px-4 h-16 flex items-center justify-between md:px-8 md:w-[80%] md:mx-auto transition-all">
 
         <div className="flex items-center gap-2 pt-2">
-          <BookText className="text-emerald-600 w-6 h-6 hidden md:block" />
+          <BookText className="text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.6)] w-6 h-6 hidden md:block" />
           <div className="flex flex-col px-1 ">
-            <span className=" text-xl font-bold text-slate-800 dark:text-white leading-none">
+            <span className=" text-xl font-bold text-slate-800 dark:text-white leading-none drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]">
               Task Ledger
             </span>
             <div className="flex items-center gap-1 mt-1">
@@ -490,7 +554,7 @@ export default function App() {
 
         <div className="flex items-center gap-3 ">
           <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${isAdmin ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border backdrop-blur-sm ${isAdmin ? "bg-emerald-50/50 dark:bg-emerald-500/20 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]" : "bg-slate-100/50 dark:bg-slate-800/50 border-slate-500/30 text-slate-600 dark:text-slate-300 shadow-[0_0_10px_rgba(148,163,184,0.2)]"}`}
           >
             {isAdmin ? (
               <ShieldCheck className="w-4 h-4" />
@@ -503,7 +567,7 @@ export default function App() {
           </div>
           <button
             onClick={() => setIsAuthorized(false)}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 p-2 rounded-full hover:bg-red-500/10 hover:shadow-[0_0_15px_rgba(239,68,68,0.2)] transition-all"
           >
             <LogOut className="w-5 h-5" />
           </button>
@@ -513,6 +577,62 @@ export default function App() {
 
 
       <main className="max-w-6xl w-full mx-auto p-4 md:p-6 space-y-6">
+        {/* Working Status Bar */}
+        <div className={`bg-white dark:bg-slate-900 rounded-xl border p-3 md:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all duration-500 relative overflow-hidden ${
+          workingStatus === 'Sherry' ? 'border-violet-500/50 shadow-[0_0_30px_rgba(139,92,246,0.2)] dark:shadow-[0_0_30px_rgba(139,92,246,0.15)]' :
+          workingStatus === 'Akuma' ? 'border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.2)] dark:shadow-[0_0_30px_rgba(59,130,246,0.15)]' :
+          workingStatus === 'Idle' ? 'border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.2)] dark:shadow-[0_0_30px_rgba(16,185,129,0.15)]' :
+          'border-slate-200 dark:border-slate-800 shadow-sm'
+        }`}>
+          {/* Subtle background glow depending on status */}
+          <div className={`absolute inset-0 opacity-10 dark:opacity-20 transition-colors duration-500 ${
+            workingStatus === 'Sherry' ? 'bg-violet-500' :
+            workingStatus === 'Akuma' ? 'bg-blue-500' :
+            workingStatus === 'Idle' ? 'bg-emerald-500' :
+            'bg-transparent'
+          }`} />
+          
+          <div className="flex items-center gap-3 relative z-10">
+            <div className={`p-2 rounded-xl transition-all duration-500 border ${
+              workingStatus === 'Sherry' ? 'bg-violet-100 dark:bg-violet-500/30 text-violet-600 dark:text-violet-400 shadow-[0_0_15px_rgba(139,92,246,0.5)] border-violet-300 dark:border-violet-500' :
+              workingStatus === 'Akuma' ? 'bg-blue-100 dark:bg-blue-500/30 text-blue-600 dark:text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.5)] border-blue-300 dark:border-blue-500' :
+              workingStatus === 'Idle' ? 'bg-emerald-100 dark:bg-emerald-500/30 text-emerald-600 dark:text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.5)] border-emerald-300 dark:border-emerald-500' :
+              'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-transparent'
+            }`}>
+              <User className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">Current Status</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">who is working right now?</p>
+            </div>
+          </div>
+          
+          <div className={`flex p-1.5 rounded-xl border backdrop-blur-sm relative z-10 transition-all duration-500 ${
+            workingStatus === 'Sherry' ? 'bg-violet-50/50 dark:bg-violet-900/30 border-violet-200/50 dark:border-violet-700/50 shadow-[0_0_15px_rgba(139,92,246,0.15)]' :
+            workingStatus === 'Akuma' ? 'bg-blue-50/50 dark:bg-blue-900/30 border-blue-200/50 dark:border-blue-700/50 shadow-[0_0_15px_rgba(59,130,246,0.15)]' :
+            workingStatus === 'Idle' ? 'bg-emerald-50/50 dark:bg-emerald-900/30 border-emerald-200/50 dark:border-emerald-700/50 shadow-[0_0_15px_rgba(16,185,129,0.15)]' :
+            'bg-slate-100/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/50'
+          }`}>
+            {statusConfig.map(({ name, icon: Icon, activeClass }) => {
+              const isActive = workingStatus === name;
+              return (
+                <button
+                  key={name}
+                  onClick={() => handleStatusChange(name)}
+                  className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-lg border transition-all duration-300 ${
+                    isActive
+                      ? activeClass
+                      : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50"
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive && name !== 'Idle' ? "fill-current" : ""}`} />
+                  {name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <StatCard
             title="Total Tasks"
@@ -534,10 +654,10 @@ export default function App() {
           />
         </div>
 
-        <div className="bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
-          <div className="p-4 border-b dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
+        <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-xl border border-emerald-500/20 dark:border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.1)] overflow-hidden transition-all">
+          <div className="p-4 border-b border-emerald-500/20 dark:border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-900/10 flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
-              <PlusCircle className="w-4 h-4 text-emerald-500" /> New Session
+              <PlusCircle className="w-4 h-4 text-emerald-500 drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]" /> New Session
             </h3>
             {saving && (
               <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
@@ -558,7 +678,7 @@ export default function App() {
                   onChange={(e) =>
                     setFormData({ ...formData, date: e.target.value })
                   }
-                  className="w-full border dark:border-slate-700 rounded-lg px-2 py-2 text-xs bg-white dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-colors"
+                  className="w-full border border-emerald-500/20 dark:border-emerald-500/30 rounded-lg px-2 py-2 text-xs bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm dark:text-white focus:border-emerald-500 focus:shadow-[0_0_15px_rgba(16,185,129,0.2)] outline-none transition-all"
                 />
                 <input
                   type="time"
@@ -566,7 +686,7 @@ export default function App() {
                   onChange={(e) =>
                     setFormData({ ...formData, time: e.target.value })
                   }
-                  className="w-32 border dark:border-slate-700 rounded-lg px-2 py-2 text-xs bg-white dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-colors"
+                  className="w-32 border border-emerald-500/20 dark:border-emerald-500/30 rounded-lg px-2 py-2 text-xs bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm dark:text-white focus:border-emerald-500 focus:shadow-[0_0_15px_rgba(16,185,129,0.2)] outline-none transition-all"
                 />
               </div>
             </div>
@@ -583,7 +703,7 @@ export default function App() {
                 onChange={(e) =>
                   setFormData({ ...formData, startCount: e.target.value })
                 }
-                className="w-full border dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-colors"
+                className="w-full border border-emerald-500/20 dark:border-emerald-500/30 rounded-lg px-3 py-2 text-sm bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm dark:text-white focus:border-emerald-500 focus:shadow-[0_0_15px_rgba(16,185,129,0.2)] outline-none transition-all"
               />
             </div>
             <div className="space-y-1">
@@ -599,13 +719,13 @@ export default function App() {
                 onChange={(e) =>
                   setFormData({ ...formData, endCount: e.target.value })
                 }
-                className="w-full border dark:border-slate-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-colors"
+                className="w-full border border-emerald-500/20 dark:border-emerald-500/30 rounded-lg px-3 py-2 text-sm bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm dark:text-white focus:border-emerald-500 focus:shadow-[0_0_15px_rgba(16,185,129,0.2)] outline-none transition-all"
               />
             </div>
             <button
               type="submit"
               disabled={saving}
-              className={`font-bold py-2 rounded-lg transition-all shadow-md ${saving ? "bg-slate-300 dark:bg-slate-700" : "bg-emerald-600 hover:bg-emerald-700 text-white"}`}
+              className={`font-bold py-2 rounded-lg transition-all border backdrop-blur-sm ${saving ? "bg-slate-300/50 dark:bg-slate-700/50 border-slate-400/50" : "bg-emerald-500/90 hover:bg-emerald-500 border-emerald-400/50 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:shadow-[0_0_25px_rgba(16,185,129,0.6)]"}`}
             >
               Add Entry
             </button>
@@ -614,21 +734,21 @@ export default function App() {
 
 
         {/* Task Entries Table */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 shadow-sm overflow-hidden mb-8 transition-colors">
-          <div className="p-4 border-b dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex flex-wrap items-center justify-between gap-4">
+        <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-xl border border-emerald-500/20 dark:border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.1)] overflow-hidden mb-8 transition-all">
+          <div className="p-4 border-b border-emerald-500/20 dark:border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-900/10 flex flex-wrap items-center justify-between gap-4">
             <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
-              <BookText className="w-4 h-4 text-emerald-500" /> Ledger Data
+              <BookText className="w-4 h-4 text-emerald-500 drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]" /> Ledger Data
             </h3>
             <div className="flex gap-2">
               <button
                 onClick={exportToCSV}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm border border-emerald-500/30 rounded-md text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 hover:shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:text-emerald-600 dark:hover:text-emerald-400 transition-all shadow-sm"
               >
                 <Download className="w-3.5 h-3.5" /> CSV
               </button>
               <button
                 onClick={exportToPDF}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm border border-emerald-500/30 rounded-md text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 hover:shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:text-emerald-600 dark:hover:text-emerald-400 transition-all shadow-sm"
               >
                 <FileText className="w-3.5 h-3.5" /> PDF
               </button>
@@ -637,7 +757,7 @@ export default function App() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
-                <tr className="bg-slate-50 dark:bg-slate-800/50 border-b dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest transition-colors">
+                <tr className="bg-emerald-50/20 dark:bg-emerald-900/10 border-b border-emerald-500/10 dark:border-emerald-500/10 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest transition-colors">
                   <th className="px-6 py-4">Date</th>
                   <th className="px-6 py-4">Time</th>
                   <th className="px-6 py-4">counts</th>
@@ -669,12 +789,12 @@ export default function App() {
                       {group.items.map((item, index) => (
                         <tr
                           key={item.id}
-                          className="border-b dark:border-slate-800 border-slate-100 hover:bg-slate-50/50 dark:hover:bg-slate-800 transition-colors"
+                          className="border-b border-emerald-500/5 dark:border-emerald-500/10 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 transition-colors"
                         >
                           {index === 0 ? (
                             <td
                               rowSpan={group.items.length}
-                              className="px-6 py-4 align-top border-r dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/50"
+                              className="px-6 py-4 align-top border-r border-emerald-500/5 dark:border-emerald-500/10 bg-emerald-50/10 dark:bg-emerald-900/5"
                             >
                               <div className="flex flex-col">
                                 <span className="font-bold text-slate-800 dark:text-white">
@@ -687,7 +807,7 @@ export default function App() {
                                     },
                                   )}
                                 </span>
-                                <div className="mt-2 p-2 bg-white dark:bg-slate-800 rounded border border-slate-100 dark:border-slate-700">
+                                <div className="mt-2 p-2 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded border border-emerald-500/20 dark:border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.05)]">
                                   <p className="text-[8px] text-slate-400 dark:text-slate-500 font-black uppercase">
                                     Daily Sum
                                   </p>
@@ -717,7 +837,7 @@ export default function App() {
                             <button
                               disabled={!isAdmin}
                               onClick={() => toggleStatus(item.id, item.status, item.subTotal)}
-                              className={`flex items-center gap-1 mx-auto px-2 py-1 rounded-md text-[10px] font-bold ${item.status === "done" ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"}`}
+                              className={`flex items-center gap-1 mx-auto px-2 py-1 rounded-md text-[10px] font-bold border backdrop-blur-sm transition-all ${item.status === "done" ? "bg-emerald-100/50 dark:bg-emerald-500/20 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]" : "bg-amber-100/50 dark:bg-amber-500/20 border-amber-500/30 text-amber-700 dark:text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.3)]"}`}
                             >
                               {item.status === "done" ? (
                                 <CheckCircle2 className="w-3 h-3" />
@@ -730,7 +850,7 @@ export default function App() {
                           <td className="px-6 py-4 text-center">
                             <button
                               onClick={() => setDeleteModalId(item.id)}
-                              className="text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                              className="text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:drop-shadow-[0_0_8px_rgba(239,68,68,0.8)] transition-all"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -744,18 +864,18 @@ export default function App() {
             </table>
           </div>
           {groupedEntries.length > 3 && (
-            <div className="p-4 border-t dark:border-slate-800 flex justify-center bg-slate-50 dark:bg-slate-800/30">
+            <div className="p-4 border-t border-emerald-500/20 dark:border-emerald-500/20 flex justify-center bg-emerald-50/20 dark:bg-emerald-900/10">
               {visibleDaysCount < groupedEntries.length ? (
                 <button
                   onClick={() => setVisibleDaysCount((prev) => prev + 3)}
-                  className="bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold py-2.5 px-6 rounded-full transition-colors border border-slate-200 dark:border-slate-700 shadow-sm"
+                  className="bg-white/50 hover:bg-emerald-50 dark:bg-slate-800/50 dark:hover:bg-emerald-900/30 backdrop-blur-sm text-slate-700 dark:text-slate-300 text-xs font-bold py-2.5 px-6 rounded-full transition-all border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:text-emerald-600 dark:hover:text-emerald-400"
                 >
                   View Older Days
                 </button>
               ) : (
                 <button
                   onClick={() => setVisibleDaysCount(3)}
-                  className="bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold py-2.5 px-6 rounded-full transition-colors border border-slate-200 dark:border-slate-700 shadow-sm"
+                  className="bg-white/50 hover:bg-emerald-50 dark:bg-slate-800/50 dark:hover:bg-emerald-900/30 backdrop-blur-sm text-slate-700 dark:text-slate-300 text-xs font-bold py-2.5 px-6 rounded-full transition-all border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:text-emerald-600 dark:hover:text-emerald-400"
                 >
                   Show Less
                 </button>
@@ -770,10 +890,10 @@ export default function App() {
         <div className="space-y-4 mt-10 mb-18">
           <div className="flex items-center gap-2">
             <History className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-            <h2 className="text-lg font-bold text-slate-800 dark:text-white">Activity Log</h2>
+            <h2 className="text-lg font-bold text-slate-800 dark:text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.1)]">Activity Log</h2>
           </div>
-          <div className="bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 shadow-sm p-8 relative transition-colors">
-            <div className="absolute  left-[47px] top-10 bottom-10 w-px bg-slate-100 dark:bg-slate-800"></div>
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-xl border border-emerald-500/20 dark:border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.1)] p-8 relative transition-all">
+            <div className="absolute left-[47px] top-10 bottom-10 w-px bg-emerald-500/20 dark:bg-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
             <div className="space-y-4 relative">
               {activities.slice(0, visibleActivityCount).map((activity) => (
                 <TimelineItem
@@ -793,14 +913,14 @@ export default function App() {
                 {visibleActivityCount < activities.length ? (
                   <button
                     onClick={() => setVisibleActivityCount((prev) => prev + 5)}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-2.5 px-5 rounded-full transition-colors border border-slate-700 shadow-sm"
+                    className="bg-slate-800/50 hover:bg-emerald-900/30 backdrop-blur-sm text-slate-300 text-xs font-bold py-2.5 px-5 rounded-full transition-all border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] hover:text-emerald-400"
                   >
                     View More Activity
                   </button>
                 ) : (
                   <button
                     onClick={() => setVisibleActivityCount(5)}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold py-2.5 px-5 rounded-full transition-colors border border-slate-700 shadow-sm"
+                    className="bg-slate-800/50 hover:bg-emerald-900/30 backdrop-blur-sm text-slate-300 text-xs font-bold py-2.5 px-5 rounded-full transition-all border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] hover:text-emerald-400"
                   >
                     Show Less
                   </button>
@@ -814,12 +934,12 @@ export default function App() {
 
 
       {/* Mobile Summary Bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white rounded-2xl dark:bg-slate-900 border-t dark:border-slate-800 p-4 flex items-center justify-between shadow-2xl z-30 transition-colors ">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/80 rounded-t-3xl dark:bg-slate-900/80 backdrop-blur-xl border-t border-emerald-500/30 p-4 flex items-center justify-between shadow-[0_-10px_40px_rgba(16,185,129,0.15)] z-30 transition-all ">
         <div>
           <div className="text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
             Total Pay
           </div>
-          <div className="font-bold text-emerald-600 text-xl">
+          <div className="font-bold text-emerald-600 text-xl drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">
             ${globalStats.totalEarnings.toFixed(3)}
           </div>
         </div>
@@ -827,7 +947,7 @@ export default function App() {
           <div className="text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
             Pending
           </div>
-          <div className="font-bold text-amber-600 text-lg">
+          <div className="font-bold text-amber-600 text-lg drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]">
             ${globalStats.pendingEarnings.toFixed(3)}
           </div>
         </div>
@@ -836,15 +956,15 @@ export default function App() {
       {/* Custom Delete Confirmation Modal */}
       {deleteModalId && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md transition-opacity"
           onClick={() => setDeleteModalId(null)}
         >
           <div 
-            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 dark:border-slate-700 overflow-hidden transform transition-all scale-100"
+            className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-2xl shadow-[0_0_50px_rgba(239,68,68,0.2)] w-full max-w-sm border border-red-500/30 overflow-hidden transform transition-all scale-100"
             onClick={(e) => e.stopPropagation()} // Prevent clicks inside the modal from closing it
           >
             <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-red-100 dark:bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-red-100/50 dark:bg-red-500/20 border border-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.4)] text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                 <AlertCircle className="w-8 h-8" />
               </div>
               <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Delete Entry?</h3>
@@ -854,13 +974,13 @@ export default function App() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setDeleteModalId(null)}
-                  className="flex-1 px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  className="flex-1 px-4 py-2.5 rounded-lg border border-slate-300/50 dark:border-slate-600/50 backdrop-blur-sm text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-100/50 dark:hover:bg-slate-800/50 hover:shadow-[0_0_15px_rgba(148,163,184,0.2)] transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmDelete}
-                  className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold transition-colors shadow-sm shadow-red-500/20"
+                  className="flex-1 px-4 py-2.5 rounded-lg bg-red-500/90 hover:bg-red-500 border border-red-400/50 text-white font-bold transition-all shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:shadow-[0_0_30px_rgba(239,68,68,0.6)] backdrop-blur-sm"
                 >
                   Delete
                 </button>
